@@ -1,0 +1,360 @@
+<!doctype html>
+<html>
+<!-- Links for font style, D3 library, Jquery, and CSS -->
+<link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet">
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/topojson.v1.min.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+<script src="./JSON/bostonNeighborhoods.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-tip/0.7.1/d3-tip.min.js"></script>
+
+<!-- google api src address is at bottom of this index.html -->
+
+<head>
+  <title>CS 573 DataVisFinal project</title>
+  <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+
+<body>
+    <h1>
+        Signal Search of Licensed Boston Liquor Venues
+    </h1>
+        <div id = "googMap"></div>
+        <div id = "twitterContainer">
+            <div id="infoPanel">
+                <div id="Business" style="text-align: center">Click a venue for tweets!</div>
+                <div id="Phone"></div>
+            </div>
+           <div id="Tweets">
+                <div class="tweetContainer">
+                    <div class="tweetTitle">
+                    </div>
+                    <div class="tweetContent" style="text-align: center">
+                            <img src="https://logos-download.com/wp-content/uploads/2016/02/Twitter_logo_bird_transparent_png.png" width = "60%">
+                    </div>
+                </div>
+            </div>
+        </div>
+</body>
+
+<script>
+    console.log(d3); // test if d3 is loaded
+    var recordData = [];
+    // Create and build canvas
+    // try changing width and height numbers
+    var margin = {top: 50, right: 50, bottom: 50, left: 50},
+            width = 1300 - margin.left - margin.right,
+            height = 1000 - margin.top - margin.bottom;
+
+    //create a global variable that will point to the tooltip in the DOM
+    var tipObj = null;
+
+    // Google MAPS code for map overlay
+    window.initMap = function() {
+        // coordinates .csv data
+        var venueData = [];
+            venueNames = [];
+
+        
+                    
+        // most of the map and venue coord data plotting is within d3.csv
+        d3.csv("./Python/licenses.csv", function(error, data) {
+            data.forEach(function(d) {
+                loc = d.Location.split(",");
+                goodLat = loc[0].replace(/[{()}]/g, '');
+                goodLong = loc[1].replace(/[{()}]/g, '');
+                venueData.push({
+                    lat: +goodLat,
+                    long: +goodLong
+                });
+                venueNames.push(d.BusinessName);
+                recordData.push(d);
+            });
+            
+            var google = window.google;
+
+            // http://www.colourlovers.com/palette/937624/Dance_To_Forget
+            var colors = ['#FF4E50','#FC913A','#F9D423','#EDE574','#E1F5C4','#FF4E50','#FC913A','#F9D423'];
+
+        
+            function SVGOverlay (map) {
+                this.map = map;
+                this.svg = null;
+                this.coords = [];
+
+                this.onPan = this.onPan.bind(this);
+
+                this.setMap(map);
+            }
+
+            SVGOverlay.prototype = new google.maps.OverlayView();
+
+            SVGOverlay.prototype.onAdd = function () {
+                this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                this.svg.id = 'venueSVG'
+                //this.svg = d3.select(this.getPanes().overlayLayer)
+                            // .append('div')
+                            // .attr('class', 'venues');
+                this.svg.style.position = 'absolute';
+                this.svg.style.top = 86;
+                this.svg.style.left = 7;    // in order for overlay to cutoff at left-margin
+                this.svg.style.width = "75%";    // same size as Google Maps googMap style
+                this.svg.style.height = '850px';
+                this.svg.style.pointerEvents = 'none'; // when set to none, then venue dots aren't selectable
+                this.svg.style.cursor = 'crosshair';
+
+                var bounds = this.map.getBounds(),
+                    center = bounds.getCenter(),
+                    ne = bounds.getNorthEast(),
+                    sw = bounds.getSouthWest();
+                
+                // setting up the circle coord data (id, name, color, lat and lng)
+                for (var i = 0; i < venueData.length; i++) {
+                    this.coords.push({
+                        id: i,
+                        name: venueNames[i],
+                        latLng: new google.maps.LatLng(
+                            venueData[i].lat,
+                            venueData[i].long
+                        )
+                    });
+                }
+        
+                var proj = this.getProjection();
+
+                // code for prepping Boston overlay map
+                // var transform = d3.geoTransform({point: function(x, y) {
+                //     d = new google.maps.LatLng(y, x);
+                //     d = proj.fromLatLngToDivPixel(d);
+                //     this.stream.point(d.x, d.y);
+                //     }
+                // });
+                // var geoPath = d3.geoPath()
+                //                 .projection(transform);
+                // plotting Boston overlay map
+                // d3.select(this.svg)
+                //     .append('g')
+                //     .attr('class', 'bos')
+                //     .selectAll("path")
+                //     .data(neighborhoods_json.features)
+                //     .enter()
+                //     .append("path")
+                //     .attr("d", geoPath)
+                //     .style('opacity', .4)
+                //     .attr('fill', '#ffc300');
+
+                // tooltip declaration
+                var tool_tip = d3.tip()
+                    .attr("class", "d3-tip")
+                    .offset([-20, 0])
+                    .html(function(d) { 
+                        console.log(moused = d);
+                        return d.name; });
+
+
+
+                // SHOW TWEETS FUNCTION
+                function showTweets(id) {
+                    var licence = recordData[id];
+
+                    // clear InfoPanel
+                    var infoPanel = document.getElementById("infoPanel");
+                    infoPanel.innerHTML ="";
+
+                    // businessInfo
+                    var businessInfo = document.createElement("div");
+                    businessInfo.id = "businessInfo";
+                    businessInfo.innerHTML = "<center><h2>" + licence.BusinessName + "</h2></center>Address: " + licence.Address;
+                    infoPanel.appendChild(businessInfo);
+
+                    // phoneInfo
+                    var phoneInfo = document.createElement("div");
+                    phoneInfo.id = "phoneInfo";
+                    phoneInfo.innerHTML = "Phone: " + licence.Phone + "<br>Capacity: " + licence.Capacity;
+                    infoPanel.appendChild(phoneInfo);
+
+                    // clear tweets
+                    var tweets = document.getElementById("Tweets");
+                    tweets.innerHTML = "";
+                    
+                    // ASSUMES ZERO INDEX FOR RECORDS
+                    var fileName = "./Python/Tweets/location" + id + ".csv";
+
+                    d3.text(fileName, function(r) {
+                        var result = "UserName,UserID,Content,Time\n" + r;
+                        var data = d3.csvParse(result, function(d) {
+                            var tweets = document.getElementById("Tweets");
+
+                            // TweetContainer
+                            var tweet = document.createElement("div");
+                            tweet.className = "tweetContainer";
+                            tweets.appendChild(tweet);
+
+                            // Tweet Title
+                            var tweetTitle = document.createElement("div");
+                            tweetTitle.className = "tweetTitle";
+                            tweetTitle.innerHTML = "@" + "<b>" + d.UserName + "</b> - " + d.Time;
+                            tweet.appendChild(tweetTitle);
+
+                            // Tweet Content
+                            var tweetContent = document.createElement("div");
+                            tweetContent.className = "tweetContent";
+                            var tweetContentText = document.createTextNode(d.Content.slice(2, -1));
+                            tweetContent.appendChild(tweetContentText);
+                            tweet.appendChild(tweetContent);
+                        });
+                    })
+                }
+                
+                //g which is the actual venue circles
+                var g = d3.select(this.svg).append('g');
+                    //.attr('width', 4000) <- not necessary it seems
+                    //.attr('height', 4000)
+                    g.attr('class', 'coords')
+                    .selectAll('circle')
+                    .data(this.coords, (d) => d.id)
+                    .enter().append('circle')
+                    .attr('class', 'circleDot')
+                    .attr('cx', (d) => proj.fromLatLngToContainerPixel(d.latLng).x)
+                    .attr('cy', (d) => proj.fromLatLngToContainerPixel(d.latLng).y)
+                    .attr('r', 3)
+                    .on('mouseover', tool_tip.show)
+                    .on('mouseout', tool_tip.hide)
+                    .on('click', function(d) {
+                        showTweets(d.id);
+                    });
+                
+                // I was trying to get a normal SVG with google maps and venue plotting
+                // var marker = mapSVG.selectAll('svg')
+                //                 .data(this.coords, function(d) { return d.id; })
+                //                 .enter().append('svg:svg')
+                //                 .attr('class', 'coords');
+                // marker.append('svg:circle')
+                //         .attr('cx', (d) => proj.fromLatLngToContainerPixel(d.latLng).x)
+                //         .attr('cy', (d) => proj.fromLatLngToContainerPixel(d.latLng).y)
+                //         .attr('r', 3)
+                //         .attr('fill', function(d) { return d.color; }) // or via (d) => d.color
+                //         .style('stroke', 'orange');
+                
+                this.onPan();
+                document.body.appendChild(this.svg); // <- THIS ONE PUTS THE SVG of VENUES AT THE VERY END
+                d3.select(this.svg).call(tool_tip);
+                this.map.addListener('center_changed', this.onPan);
+                console.log('finished onAdd');
+
+                // Mouse click toggle over venue-SVG area. This is to toggle to drag-and-zoom
+                var selSVG = document.querySelector('svg#venueSVG');
+                selSVG.addEventListener('click', function(e) {
+                    selSVG.style.pointerEvents = 'none';
+                });
+            };
+
+            SVGOverlay.prototype.onPan = function () {
+                var projPan = this.getProjection();
+                console.log(mapz = this.map.getZoom());
+                // code for prepping Boston overlay map
+                var transformPan = d3.geoTransform({point: function(x, y) {
+                    d = new google.maps.LatLng(y, x);
+                    d = projPan.fromLatLngToDivPixel(d);
+                    this.stream.point(d.x, d.y);
+                    }
+                });
+                var geoPathPan = d3.geoPath()
+                                .projection(transformPan);
+                if (this.map.getZoom() >= 16) {
+                    d3.select(this.svg)
+                    .select('.coords')
+                    .selectAll('circle')
+                    .data(this.coords)
+                        .attr('cx', (d) => projPan.fromLatLngToContainerPixel(d.latLng).x)
+                        .attr('cy', (d) => projPan.fromLatLngToContainerPixel(d.latLng).y)
+                        .attr('r', (d) => 10 );
+                }
+                else if (this.map.getZoom() < 16 && this.map.getZoom() >= 14) {
+                    d3.select(this.svg)
+                    .select('.coords')
+                    .selectAll('circle')
+                    .data(this.coords)
+                        .attr('cx', (d) => projPan.fromLatLngToContainerPixel(d.latLng).x)
+                        .attr('cy', (d) => projPan.fromLatLngToContainerPixel(d.latLng).y)
+                        .attr('r', (d) => 5 );
+                }
+                else {
+                    d3.select(this.svg)
+                    .select('.coords')
+                    .selectAll('circle')
+                    .data(this.coords)
+                        .attr('cx', (d) => projPan.fromLatLngToContainerPixel(d.latLng).x)
+                        .attr('cy', (d) => projPan.fromLatLngToContainerPixel(d.latLng).y)
+                        .attr('r', (d) => 2);
+                }
+
+                // pan doesn't seem to work
+                //d3.select(this.svg)
+                // .select('.bos')
+                // .selectAll('path')
+                // .data(neighborhoods_json.features)
+                // .enter()
+                // .append("path")
+                // .attr("d", geoPathPan)
+                // .style('opacity', .7);
+            };
+
+            SVGOverlay.prototype.onRemove = function () {
+                this.map.removeListener('center_changed', this.onPan);
+                this.svg.parentNode.removeChild(this.svg);
+                this.svg = null;
+                console.log('removed');
+            };
+
+            SVGOverlay.prototype.draw = function () {
+                console.log('draw');
+            };
+
+            var map = new google.maps.Map(d3.select("#googMap").node(), {
+                center: new google.maps.LatLng(42.3401, -71.0589), // BOSTON
+                zoom: 13,
+                disableDefaultUI: true,
+                backgroundColor: '#002732',
+                // SNAZZY MAPS STYLE - NEUTRAL BLUE
+                styles: [{"featureType":"water","elementType":"geometry","stylers":[{"color":"#193341"}]},
+                        {"featureType":"landscape","elementType":"geometry","stylers":[{"color":"#2c5a71"}]},
+                        {"featureType":"road","elementType":"geometry","stylers":[{"color":"#29768a"},{"lightness":-37}]},
+                        {"featureType":"poi","elementType":"geometry","stylers":[{"color":"#406d80"}]},
+                        {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#406d80"}]},
+                        {"elementType":"labels.text.stroke","stylers":[{"visibility":"on"},{"color":"#3e606f"},{"weight":4},{"gamma":0.84}]},
+                        {"elementType":"labels.text.fill","stylers":[{"color":"#ffffff"},{"lightness":-20}]},
+                        {"featureType":"administrative","elementType":"geometry","stylers":[{"weight":0.6},{"color":"#1a3541"}]},
+                        {"elementType":"labels.icon","stylers":[{"visibility":"off"}]},
+                        {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#2c5a71"}]}]
+            });
+
+            var overlay = new SVGOverlay(map);
+
+            // click toggle for venue circle tooltip hover feature
+            map.addListener('click', function(e) {
+                map.setOptions( { draggableCursor: 'grab' })
+                overlay.svg.style.pointerEvents = 'auto';             
+            });
+
+            // Tooltip follow for mouse cursor, that indicates the click-toggle feature
+            // map.addListener('mouseover', function(e) {
+            //     var tipMessage = "This is a tooltip message";
+            //     injectTooltip(e, tipMessage);
+            // })
+            // move mouse tooltip
+            // map.addListener('mousemove', function(e) {
+            //     moveTooltip(e);
+            // })
+            // Remove tooltip when go outside google maps view
+            // map.addListener('mouseout', function(e) {
+            //     deleteTooltip(e);
+            // })
+
+        }) // end for d3.csv
+    }; // end for window.initMap
+
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?v=3&amp;key=AIzaSyDJlOYItcbra-FEIEDEaaZOYuoTthVei30&amp;callback=initMap"></script>
+
+</html>
